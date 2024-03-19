@@ -13,3 +13,4 @@ export const MONTHS = [
   "November",
   "December",
 ];
+export const SERVICE_PRICES = [400, 500, 750, 950];

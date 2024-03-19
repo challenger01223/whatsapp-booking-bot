@@ -1,30 +1,21 @@
 import { Request, Response, NextFunction } from "express";
 import { twiml } from "twilio";
-import { SERVICES, MONTHS } from "../utils/constants";
+import { SERVICES, MONTHS, SERVICE_PRICES } from "../utils/constants";
 const { MessagingResponse } = twiml;
+import Book from "../models/Book";
 
 type IUser = {
   WaId: string;
   ProfileName: string;
 };
 
-type IBotStep = {
-  user: IUser;
-  step: string | null;
-  bookingInfo: Array<string>;
-};
-
-let state: Array<IBotStep> = [];
 let currentUser: IUser | null = null;
 
 const ServiceSelection = () => {
-  let str = `
-        Hi, ${currentUser?.ProfileName}. What service would you like to book?
-
-        --- Services ---`;
+  let str = `Hi, ${currentUser?.ProfileName}. What service would you like to book?\n`;
 
   SERVICES.forEach((service: string, index: number) => {
-    str += `${index + 1} - ${service}\n`;
+    str += `${index + 1} - ${service} ($${SERVICE_PRICES[index]})\n`;
   });
   return str;
 };
@@ -36,6 +27,10 @@ const getDayFormat = (date: Date) => {
   return `${month} ${day}, ${year}`;
 };
 
+const convertToTwoDigits = (num: number) => {
+  return num < 10 ? '0' + num : num;
+}
+
 const DaySelection = () => {
   const date = new Date();
   const secondDate = new Date();
@@ -44,13 +39,7 @@ const DaySelection = () => {
   secondDate.setDate(date.getDate() + 1);
   thirdDate.setDate(date.getDate() + 2);
   fourthDate.setDate(date.getDate() + 3);
-  return `
-        When would you like to book?
-        1 - ${getDayFormat(date)} (today)
-        2 - ${getDayFormat(secondDate)}
-        3 - ${getDayFormat(thirdDate)}
-        4 - ${getDayFormat(fourthDate)}
-    `;
+  return `When would you like to book?\n1 - ${getDayFormat(date)} (today)\n2 - ${getDayFormat(secondDate)}\n3 - ${getDayFormat(thirdDate)}\n4 - ${getDayFormat(fourthDate)}`;
 };
 
 const WrongMessage = () => {
@@ -62,64 +51,84 @@ export const Booking = async (
   res: Response,
   next: NextFunction
 ) => {
-  console.log(state, currentUser);
   const { Body, WaId, ProfileName } = req.body;
   currentUser = { WaId, ProfileName };
   let result: any = null;
+  const booking = await Book.findOne({ phone: currentUser?.WaId }).sort({
+    createdAt: "asc",
+  });
 
   try {
-    const foundIndex = state.findIndex(
-      (e: IBotStep) => e.user.WaId === currentUser?.WaId
-    );
-
-    if (foundIndex !== -1) {
-      const currentBot: IBotStep = state[foundIndex];
-      switch (currentBot.step) {
+    if (booking) {
+      switch (booking.step) {
+        case "START":
+          if (Number(Body) >= 1 && Number(Body) <= 4) {
+            await Book.findByIdAndUpdate(booking._id, {
+              service: SERVICES[Number(Body) - 1],
+              price: SERVICE_PRICES[Number(Body) - 1],
+              step: "SERVICE",
+            });
+            result = DaySelection();
+          } else {
+            result = ServiceSelection();
+          }
+          break;
         case "SERVICE":
           if (Number(Body) >= 1 && Number(Body) <= 4) {
-            state[foundIndex].bookingInfo.push(String(Number(Body) - 1));
-            state[foundIndex].step = "DAY";
-            result = DaySelection();
+            const date = new Date();
+            date.setDate(date.getDate() + (Number(Body) - 1));
+            const dateToStr = `${date.getFullYear()}-${convertToTwoDigits(date.getMonth() + 1)}-${date.getDate()}`;
+            const bookedAtData = {
+              dayTimestamp: new Date(dateToStr).getTime()
+            }
+            await Book.findByIdAndUpdate(booking._id, {
+              bookedAt: bookedAtData,
+              step: "DAY"
+            });
+            result = "What time would you like to book? (24 hours format: 00:00)";
           } else {
             result = WrongMessage();
           }
           break;
         case "DAY":
-          if (Number(Body) >= 1 && Number(Body) <= 4) {
-            state[foundIndex].bookingInfo.push(String(Number(Body) - 1));
-            state[foundIndex].step = "TIME";
-            result =
-              "What time would you like to book? (24 hours format: 00:00)";
-          } else {
-            result = WrongMessage();
-          }
-          break;
-        case "TIME":
           var regex = /([01]\d|2[0-3]):([0-5]\d)/;
           const match = regex.test(Body);
           if (match) {
-            state[foundIndex].bookingInfo.push(Body);
-            state[foundIndex].step = "PERSON";
+            const hour = Body.split(':')[0];
+            const min = Body.split(':')[1];
+            const bookedAtData = {
+              dayTimestamp: booking.bookedAt?.dayTimestamp,
+              hourTimestamp: Number(hour) * 3600 * 1000 + Number(min) * 60 * 1000
+            }
+            await Book.findByIdAndUpdate(booking._id, {
+              bookedAt: bookedAtData,
+              step: "TIME"
+            });
             result = "Who do you prefer? (Name)";
           } else {
             result = WrongMessage();
           }
           break;
-        case "PERSON":
-          state[foundIndex].bookingInfo.push(Body);
-          state[foundIndex].step = null;
+        case "TIME":
+          await Book.findByIdAndUpdate(booking._id, {
+            person: Body,
+            step: "PENDING"
+          });
           result = "Thank you. You booked successfully.";
+          break;
+        case "PENDING":
+          result = `Here are your booking detail.\nService: ${booking.service} ($${booking.price})\nBooked Date: ${new Date(Number(booking.bookedAt?.dayTimestamp) + Number(booking.bookedAt?.hourTimestamp)).toLocaleString()}\nName: ${booking.person}`
           break;
         default:
           break;
       }
     } else {
       result = ServiceSelection();
-      state.push({
-        step: "SERVICE",
-        user: currentUser,
-        bookingInfo: [],
+      const newBooking = new Book({
+        phone: currentUser?.WaId,
+        step: "START",
       });
+      await newBooking.save();
     }
 
     const twimlResponse = new MessagingResponse();
