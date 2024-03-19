@@ -11,14 +11,21 @@ const BookingSchema = new Schema({
         type: String
     },
     bookedAt: {
-        dayTimestamp: Number,
-        hourTimestamp: Number
+        year: Number,
+        month: Number,
+        day: Number,
+        hour: Number,
+        min: Number
     },
     person: {
         type: String
     },
     step: {
         type: String
+    },
+    completed: {
+        type: Boolean,
+        default: false
     },
     createdAt: {
         type: Date,

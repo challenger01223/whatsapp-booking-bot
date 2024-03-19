@@ -54,8 +54,8 @@ export const Booking = async (
   const { Body, WaId, ProfileName } = req.body;
   currentUser = { WaId, ProfileName };
   let result: any = null;
-  const booking = await Book.findOne({ phone: currentUser?.WaId }).sort({
-    createdAt: "asc",
+  const booking = await Book.findOne({ phone: currentUser?.WaId, step: { $ne: 'CANCEL'} }).sort({
+    createdAt: 1, // 1 for ascending order, -1 for descending order
   });
 
   try {
@@ -77,9 +77,10 @@ export const Booking = async (
           if (Number(Body) >= 1 && Number(Body) <= 4) {
             const date = new Date();
             date.setDate(date.getDate() + (Number(Body) - 1));
-            const dateToStr = `${date.getFullYear()}-${convertToTwoDigits(date.getMonth() + 1)}-${date.getDate()}`;
             const bookedAtData = {
-              dayTimestamp: new Date(dateToStr).getTime()
+              year: date.getFullYear(),
+              month: date.getMonth(),
+              day: date.getDate()
             }
             await Book.findByIdAndUpdate(booking._id, {
               bookedAt: bookedAtData,
@@ -97,8 +98,9 @@ export const Booking = async (
             const hour = Body.split(':')[0];
             const min = Body.split(':')[1];
             const bookedAtData = {
-              dayTimestamp: booking.bookedAt?.dayTimestamp,
-              hourTimestamp: Number(hour) * 3600 * 1000 + Number(min) * 60 * 1000
+              ...booking.bookedAt,
+              hour: Number(hour),
+              min: Number(min) 
             }
             await Book.findByIdAndUpdate(booking._id, {
               bookedAt: bookedAtData,
@@ -110,14 +112,46 @@ export const Booking = async (
           }
           break;
         case "TIME":
-          await Book.findByIdAndUpdate(booking._id, {
-            person: Body,
-            step: "PENDING"
-          });
+          await Book.findByIdAndUpdate(booking._id, { person: Body, step: "PENDING", completed: true });
           result = "Thank you. You booked successfully.";
           break;
         case "PENDING":
-          result = `Here are your booking detail.\nService: ${booking.service} ($${booking.price})\nBooked Date: ${new Date(Number(booking.bookedAt?.dayTimestamp) + Number(booking.bookedAt?.hourTimestamp)).toLocaleString()}\nName: ${booking.person}`
+          if(Body === 'y') {
+            await Book.findByIdAndUpdate(booking._id, { step: "REBOOKING" });
+            result = 'Which day you prefer? (e.g: 2024:01:01)';
+          } else if (Body === 'n') {
+            await Book.findByIdAndUpdate(booking._id, { step: "CANCEL" });
+            result = ServiceSelection();
+            const newBooking = new Book({
+              phone: currentUser?.WaId,
+              step: "START",
+            });
+            await newBooking.save();
+          } else {
+            const hour = Number(booking.bookedAt?.hour);
+            const min = Number(booking.bookedAt?.min);
+            const time = (hour > 12 ? `${hour - 12}` : hour)  + `:${convertToTwoDigits(min)}:00 ` + (hour >= 12 ? 'PM' : 'AM');
+            result = `We suggest you\nService: ${booking.service} ($${booking.price})\nBooking Time: ${time}\nName: ${booking.person}\n\nAre you happy for this suggestion? (y/n)`
+          }
+          break;
+        case "REBOOKING":
+          var regex = /^\d{4}:\d{2}:\d{2}$/;
+          let isCorect = regex.test(Body);
+          if(isCorect) {
+            const year = Body.split(':')[0];
+            const month = Body.split(':')[1];
+            const day = Body.split(':')[2];
+            const bookedAtData = {
+              ...booking.bookedAt,
+              year: Number(year),
+              month: Number(month),
+              day: Number(day) 
+            }
+            await Book.findByIdAndUpdate(booking._id, { bookedAt: bookedAtData, step: 'PENDING' });
+            result = `Thank you. You booked successfully on ${MONTHS[Number(month)].substring(0,3)} ${day}, ${year}.`;
+          } else {
+            result = WrongMessage();
+          }
           break;
         default:
           break;
@@ -139,3 +173,12 @@ export const Booking = async (
     return next(err);
   }
 };
+
+export const BookingData = async (req: Request, res: Response) => {
+  try {
+    const bookings = await Book.find({ completed: true }).sort({ createdAt: 1});
+    return res.status(200).json({ bookings: bookings });
+  } catch (err: any) {
+    console.log(err);
+  }
+}
