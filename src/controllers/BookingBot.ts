@@ -1,12 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { Twilio, twiml } from "twilio";
+import { twiml } from "twilio";
 import { SERVICES, MONTHS } from "../utils/constants";
-
 const { MessagingResponse } = twiml;
-const twilioClient = new Twilio(
-  process.env.TWILIO_SID as string,
-  process.env.TWILIO_AUTH_TOKEN as string
-);
 
 type IUser = {
   WaId: string;
@@ -23,15 +18,15 @@ let state: Array<IBotStep> = [];
 let currentUser: IUser | null = null;
 
 const ServiceSelection = () => {
-  return `
+  let str = `
         Hi, ${currentUser?.ProfileName}. What service would you like to book?
 
-        --- Services ---
-        1 - Haircut
-        2 - Baking Oil
-        3 - Dye Hair
-        4 - Hair Extension
-    `;
+        --- Services ---`;
+
+  SERVICES.forEach((service: string, index: number) => {
+    str += `${index + 1} - ${service}\n`;
+  });
+  return str;
 };
 
 const getDayFormat = (date: Date) => {
@@ -73,7 +68,9 @@ export const Booking = async (
   let result: any = null;
 
   try {
-    const foundIndex = state.findIndex((e: IBotStep) => e.user.WaId === currentUser?.WaId);
+    const foundIndex = state.findIndex(
+      (e: IBotStep) => e.user.WaId === currentUser?.WaId
+    );
 
     if (foundIndex !== -1) {
       const currentBot: IBotStep = state[foundIndex];
@@ -103,17 +100,15 @@ export const Booking = async (
           if (match) {
             state[foundIndex].bookingInfo.push(Body);
             state[foundIndex].step = "PERSON";
-            result =
-              "Who do you prefer? (Name)";
+            result = "Who do you prefer? (Name)";
           } else {
             result = WrongMessage();
           }
           break;
         case "PERSON":
-            state[foundIndex].bookingInfo.push(Body);
-            state[foundIndex].step = null;
-            result =
-              "Thank you. You booked successfully.";
+          state[foundIndex].bookingInfo.push(Body);
+          state[foundIndex].step = null;
+          result = "Thank you. You booked successfully.";
           break;
         default:
           break;
