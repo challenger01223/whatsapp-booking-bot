@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction } from "express";
-import { twiml } from "twilio";
+import { Twilio, twiml } from "twilio";
 import { SERVICES, MONTHS, SERVICE_PRICES } from "../utils/constants";
 const { MessagingResponse } = twiml;
 import Book from "../models/Book";
+
+const twilioClient = new Twilio(
+  process.env.TWILIO_SID as string,
+  process.env.TWILIO_AUTH_TOKEN as string
+);
 
 type IUser = {
   WaId: string;
@@ -167,7 +172,14 @@ export const Booking = async (
 
     const twimlResponse = new MessagingResponse();
     twimlResponse.message(result);
-    return res.status(200).send(twimlResponse.toString());
+    twilioClient.messages
+      .create({
+         from: `whatsapp:${process.env.TWILIO_NUMBER}`,
+         body: twimlResponse.toString(),
+         to: `whatsapp:+${currentUser?.WaId}`
+       })
+      .then(message => console.log(message.sid));
+    return res.status(200);
   } catch (err) {
     console.log(err);
     return next(err);
