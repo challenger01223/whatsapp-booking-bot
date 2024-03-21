@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { Twilio, twiml } from "twilio";
+import { Twilio } from "twilio";
 import { SERVICES, MONTHS, SERVICE_PRICES } from "../utils/constants";
-const { MessagingResponse } = twiml;
 import Book from "../models/Book";
 
 const twilioClient = new Twilio(
@@ -170,12 +169,10 @@ export const Booking = async (
       await newBooking.save();
     }
 
-    const twimlResponse = new MessagingResponse();
-    twimlResponse.message(result);
     twilioClient.messages
       .create({
          from: `whatsapp:${process.env.TWILIO_NUMBER}`,
-         body: twimlResponse.toString(),
+         body: result,
          to: `whatsapp:+${currentUser?.WaId}`
        })
       .then(message => console.log(message.sid));
