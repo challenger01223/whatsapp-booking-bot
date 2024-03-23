@@ -4,9 +4,6 @@ const BookingSchema = new Schema({
     phone: {
         type: String
     },
-    price: {
-        type: Number
-    },
     service: {
         type: String
     },

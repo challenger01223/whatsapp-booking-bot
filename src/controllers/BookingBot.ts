@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { Twilio } from "twilio";
-import { SERVICES, MONTHS, SERVICE_PRICES } from "../utils/constants";
+import { SERVICES, MONTHS } from "../utils/constants";
 import Book from "../models/Book";
 
 const twilioClient = new Twilio(
@@ -19,7 +19,7 @@ const ServiceSelection = () => {
   let str = `Hi, ${currentUser?.ProfileName}. What service would you like to book?\n`;
 
   SERVICES.forEach((service: string, index: number) => {
-    str += `${index + 1} - ${service} ($${SERVICE_PRICES[index]})\n`;
+    str += `${index + 1} - ${service}\n`;
   });
   return str;
 };
@@ -69,7 +69,6 @@ export const Booking = async (
           if (Number(Body) >= 1 && Number(Body) <= 4) {
             await Book.findByIdAndUpdate(booking._id, {
               service: SERVICES[Number(Body) - 1],
-              price: SERVICE_PRICES[Number(Body) - 1],
               step: "SERVICE",
             });
             result = DaySelection();
@@ -135,7 +134,7 @@ export const Booking = async (
             const hour = Number(booking.bookedAt?.hour);
             const min = Number(booking.bookedAt?.min);
             const time = (hour > 12 ? `${hour - 12}` : hour)  + `:${convertToTwoDigits(min)}:00 ` + (hour >= 12 ? 'PM' : 'AM');
-            result = `We suggest you\nService: ${booking.service} ($${booking.price})\nBooking Time: ${time}\nName: ${booking.person}\n\nAre you happy for this suggestion? (y/n)`
+            result = `We suggest you\nService: ${booking.service}\nBooking Time: ${time}\nName: ${booking.person}\n\nAre you happy for this suggestion? (y/n)`
           }
           break;
         case "REBOOKING":
